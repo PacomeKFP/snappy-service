@@ -3,11 +3,13 @@ package inc.yowyob.service.snappy.domain.usecases.chatbot;
 import inc.yowyob.service.snappy.domain.entities.Chatbot;
 import inc.yowyob.service.snappy.domain.usecases.UseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.ChatbotRepository;
-import java.util.List;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
-public class GetChatbotsRelatedToProjectUseCase implements UseCase<String, List<Chatbot>> {
+public class GetChatbotsRelatedToProjectUseCase implements UseCase<String, Flux<Chatbot>> {
 
   private final ChatbotRepository chatbotRepository;
 
@@ -16,10 +18,14 @@ public class GetChatbotsRelatedToProjectUseCase implements UseCase<String, List<
   }
 
   @Override
-  public List<Chatbot> execute(String projectId) {
+  public Flux<Chatbot> execute(String projectId) {
     if (projectId == null || projectId.isEmpty()) {
-      return chatbotRepository.findAll();
+      return Mono.fromCallable(chatbotRepository::findAll)
+          .subscribeOn(Schedulers.boundedElastic())
+          .flatMapMany(Flux::fromIterable);
     }
-    return chatbotRepository.findChatbotByProjectId(projectId);
+    return Mono.fromCallable(() -> chatbotRepository.findChatbotByProjectId(projectId))
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMapMany(Flux::fromIterable);
   }
 }

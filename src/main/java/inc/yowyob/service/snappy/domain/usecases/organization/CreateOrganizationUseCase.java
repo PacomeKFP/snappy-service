@@ -11,6 +11,8 @@ import inc.yowyob.service.snappy.presentation.resources.AuthenticationResource;
 import java.util.UUID;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 public class CreateOrganizationUseCase
@@ -30,35 +32,52 @@ public class CreateOrganizationUseCase
   }
 
   @Override
-  public AuthenticationResource<Organization> execute(CreateOrganizationDto createOrganizationDto) {
+  public Mono<AuthenticationResource<Organization>> execute(
+      CreateOrganizationDto createOrganizationDto) {
     // Vérification si une organisation avec l'email existe déjà
-    if (organizationRepository.findAll().stream()
-        .anyMatch(org -> org.getEmail().equals(createOrganizationDto.getEmail()))) {
-      throw new EntityAlreadyExistsException(
-          "Une organisation avec cet email existe déjà : " + createOrganizationDto.getEmail());
-    }
-
-    // Hachage du mot de passe
-    String hashedPassword = passwordEncoder.encode(createOrganizationDto.getPassword());
-
-    // Création de l'organisation
-    Organization org =
-        new Organization(
-            createOrganizationDto.getName(), createOrganizationDto.getEmail(), hashedPassword);
-    org.setProjectId(UUID.randomUUID().toString());
-    org.setPrivateKey(UUID.randomUUID().toString());
-
-    // Sauvegarde dans la base
-    organizationRepository.save(org);
-    return this.authenticateOrganization(
-        createOrganizationDto.getEmail(), createOrganizationDto.getPassword());
+    return Mono.fromCallable(() -> organizationRepository.findAll())
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMap(
+            organizations -> {
+              boolean emailExists =
+                  organizations.stream()
+                      .anyMatch(org -> org.getEmail().equals(createOrganizationDto.getEmail()));
+              if (emailExists) {
+                return Mono.error(
+                    new EntityAlreadyExistsException(
+                        "Une organisation avec cet email existe déjà : "
+                            + createOrganizationDto.getEmail()));
+              }
+              return Mono.just(createOrganizationDto); // Pass DTO to next step
+            })
+        .flatMap(
+            dto -> // Hachage du mot de passe
+                Mono.fromCallable(() -> passwordEncoder.encode(dto.getPassword()))
+                    .subscribeOn(Schedulers.parallel()) // Password encoding is CPU intensive
+                    .map(
+                        hashedPassword -> {
+                          // Création de l'organisation
+                          Organization org =
+                              new Organization(dto.getName(), dto.getEmail(), hashedPassword);
+                          org.setProjectId(UUID.randomUUID().toString());
+                          org.setPrivateKey(UUID.randomUUID().toString());
+                          return org;
+                        }))
+        .flatMap(
+            org -> // Sauvegarde dans la base
+                Mono.fromCallable(() -> organizationRepository.save(org))
+                    .subscribeOn(Schedulers.boundedElastic()))
+        .flatMap(
+            savedOrg -> // Authenticate
+                this.authenticateOrganization(savedOrg.getEmail(), createOrganizationDto.getPassword()));
   }
 
-  private AuthenticationResource<Organization> authenticateOrganization(
+  private Mono<AuthenticationResource<Organization>> authenticateOrganization(
       String email, String password) {
     AuthenticateOrganizationDto authenticateOrganizationDto = new AuthenticateOrganizationDto();
     authenticateOrganizationDto.setEmail(email);
     authenticateOrganizationDto.setPassword(password);
+    // authenticateOrganizationUseCase.execute already returns Mono
     return authenticateOrganizationUseCase.execute(authenticateOrganizationDto);
   }
 }

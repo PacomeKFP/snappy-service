@@ -6,12 +6,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 @Service
 public class GetAvailableLanguageModelsUseCase implements UseCase<Void, List<String>> {
 
   @Override
-  public List<String> execute(Void dto) {
-    return Arrays.stream(ChatbotLLM.values()).map(Enum::toString).collect(Collectors.toList());
+  public Mono<List<String>> execute(Void dto) {
+    return Mono.just(
+        Arrays.stream(ChatbotLLM.values()).map(Enum::toString).collect(Collectors.toList()));
   }
 }

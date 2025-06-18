@@ -8,19 +8,18 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
+import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
-@EnableWebSecurity
+@EnableWebFluxSecurity
 public class SecurityConfig {
 
   private final UserDetailsService userDetailsService;
@@ -41,13 +40,13 @@ public class SecurityConfig {
   }
 
   @Bean
-  public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+  public SecurityWebFilterChain securityFilterChain(ServerHttpSecurity http) throws Exception {
 
-    http.csrf(AbstractHttpConfigurer::disable)
+    http.csrf(ServerHttpSecurity.CsrfSpec::disable)
         .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-        .authorizeHttpRequests(
-            auth ->
-                auth.requestMatchers(
+        .authorizeExchange(
+            exchange ->
+                exchange.pathMatchers(
                         "/",
                         "/uploads/**",
                         "/doc",
@@ -56,13 +55,13 @@ public class SecurityConfig {
                         "/api-docs/**",
                         "/swagger-ui/**")
                     .permitAll()
-                    .requestMatchers(HttpMethod.POST, "/organizations")
+                    .pathMatchers(HttpMethod.POST, "/organizations")
                     .permitAll()
-                    .requestMatchers(HttpMethod.GET, "/organizations")
+                    .pathMatchers(HttpMethod.GET, "/organizations")
                     .permitAll()
-                    .anyRequest()
+                    .anyExchange()
                     .permitAll())
-        .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        .securityContextRepository(NoOpServerSecurityContextRepository.getInstance());
     //        .authenticationProvider(authenticationProvider())
     //        .addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class);
     return http.build();

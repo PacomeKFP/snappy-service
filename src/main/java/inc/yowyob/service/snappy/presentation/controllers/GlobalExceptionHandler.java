@@ -8,34 +8,41 @@ import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import reactor.core.publisher.Mono;
 
 @Hidden
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
   @ExceptionHandler(IllegalArgumentException.class)
-  public ResponseEntity<?> handleIllegalArgumentException(IllegalArgumentException ex) {
-    return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+  public Mono<ResponseEntity<Map<String, String>>> handleIllegalArgumentException(
+      IllegalArgumentException ex) {
+    return Mono.just(ResponseEntity.badRequest().body(Map.of("error", ex.getMessage())));
   }
 
   @ExceptionHandler(EntityNotFoundException.class)
-  public ResponseEntity<?> handleEntityNotFoundException(EntityNotFoundException ex) {
-    return ResponseEntity.status(404).body(Map.of("error", ex.getMessage()));
+  public Mono<ResponseEntity<Map<String, String>>> handleEntityNotFoundException(
+      EntityNotFoundException ex) {
+    return Mono.just(ResponseEntity.status(404).body(Map.of("error", ex.getMessage())));
   }
 
   @ExceptionHandler(AuthenticationFailedException.class)
-  public ResponseEntity<?> handleAuthenticationFailedException(AuthenticationFailedException ex) {
-    return ResponseEntity.status(403).body(Map.of("error", ex.getMessage()));
+  public Mono<ResponseEntity<Map<String, String>>> handleAuthenticationFailedException(
+      AuthenticationFailedException ex) {
+    return Mono.just(ResponseEntity.status(403).body(Map.of("error", ex.getMessage())));
   }
 
   @ExceptionHandler(IllegalStateTransitionException.class)
-  public ResponseEntity<?> handleIllegalStateTransitionException(AuthenticationFailedException ex) {
-    return ResponseEntity.status(409).body(Map.of("error", ex.getMessage()));
+  public Mono<ResponseEntity<Map<String, String>>> handleIllegalStateTransitionException(
+      IllegalStateTransitionException ex) { // Corrected exception type
+    return Mono.just(ResponseEntity.status(409).body(Map.of("error", ex.getMessage())));
   }
 
   @ExceptionHandler(Exception.class)
-  public ResponseEntity<?> handleGeneralException(Exception ex) {
+  public Mono<ResponseEntity<Map<String, String>>> handleGeneralException(Exception ex) {
+    // In a reactive context, logging should ideally be non-blocking.
+    // For simplicity, ex.printStackTrace() is kept, but consider structured/async logging.
     ex.printStackTrace();
-    return ResponseEntity.status(500).body(Map.of("error", ex.getMessage()));
+    return Mono.just(ResponseEntity.status(500).body(Map.of("error", ex.getMessage())));
   }
 }

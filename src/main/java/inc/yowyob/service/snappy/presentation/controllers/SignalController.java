@@ -7,6 +7,7 @@ import inc.yowyob.service.snappy.presentation.dto.signal.RegisterPreKeyBundleDto
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/signal")
@@ -17,17 +18,22 @@ public class SignalController {
   private final GetPreKeyBundleUseCase getPreKeyBundleUseCase;
 
   @PostMapping("/pre-key-bundle/{userId}")
-  public ResponseEntity<Void> registerPreKeyBundle(
-      @PathVariable String userId, @RequestBody PreKeyBundle preKeyBundle) {
-    RegisterPreKeyBundleDto registerPreKeyBundleDto =
-        new RegisterPreKeyBundleDto(userId, preKeyBundle);
-    registerPreKeyBundleUseCase.execute(registerPreKeyBundleDto);
-    return ResponseEntity.ok().build();
+  public Mono<ResponseEntity<Void>> registerPreKeyBundle(
+      @PathVariable String userId, @RequestBody Mono<PreKeyBundle> preKeyBundleMono) {
+    return preKeyBundleMono
+        .flatMap(
+            preKeyBundle -> {
+              RegisterPreKeyBundleDto registerPreKeyBundleDto =
+                  new RegisterPreKeyBundleDto(userId, preKeyBundle);
+              // Assuming registerPreKeyBundleUseCase.execute now returns Mono<Void> or Mono<Something that can be mapped to Void>
+              return registerPreKeyBundleUseCase.execute(registerPreKeyBundleDto);
+            })
+        .then(Mono.just(ResponseEntity.ok().<Void>build()));
   }
 
   @GetMapping("/pre-key-bundle/{userId}")
-  public ResponseEntity<PreKeyBundle> getPreKeyBundle(@PathVariable String userId) {
-    PreKeyBundle bundle = getPreKeyBundleUseCase.execute(userId);
-    return ResponseEntity.ok(bundle);
+  public Mono<ResponseEntity<PreKeyBundle>> getPreKeyBundle(@PathVariable String userId) {
+    // Assuming getPreKeyBundleUseCase.execute will return Mono<PreKeyBundle>
+    return getPreKeyBundleUseCase.execute(userId).map(ResponseEntity::ok);
   }
 }

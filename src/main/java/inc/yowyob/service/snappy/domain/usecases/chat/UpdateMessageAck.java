@@ -6,8 +6,9 @@ import inc.yowyob.service.snappy.domain.exceptions.IllegalStateTransitionExcepti
 import inc.yowyob.service.snappy.domain.usecases.UseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.MessageRepository;
 import inc.yowyob.service.snappy.presentation.dto.chat.UpdateMessageAckDto;
-import java.util.Optional;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 public class UpdateMessageAck implements UseCase<UpdateMessageAckDto, Message> {
@@ -19,21 +20,29 @@ public class UpdateMessageAck implements UseCase<UpdateMessageAckDto, Message> {
   }
 
   @Override
-  public Message execute(UpdateMessageAckDto dto) {
-    Optional<Message> message = messageRepository.findById(dto.getMessageId());
-    if (message.isEmpty())
-      throw new EntityNotFoundException(
-          "Target message not found; We are unable to change his ack");
-    if (message.get().getAck().ordinal() + 1 == dto.getNewAck().ordinal()) {
-      message.get().setAck(dto.getNewAck());
-      messageRepository.save(message.get());
-    } else {
-      throw new IllegalStateTransitionException(
-          "Vous ne pouvez pas changer un ack de "
-              + message.get().getAck()
-              + " à "
-              + dto.getNewAck());
-    }
-    return message.get();
+  public Mono<Message> execute(UpdateMessageAckDto dto) {
+    return Mono.fromCallable(() -> messageRepository.findById(dto.getMessageId()))
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMap(
+            optionalMessage -> {
+              if (optionalMessage.isEmpty()) {
+                return Mono.error(
+                    new EntityNotFoundException(
+                        "Target message not found; We are unable to change his ack"));
+              }
+              Message message = optionalMessage.get();
+              if (message.getAck().ordinal() + 1 == dto.getNewAck().ordinal()) {
+                message.setAck(dto.getNewAck());
+                return Mono.fromCallable(() -> messageRepository.save(message))
+                    .subscribeOn(Schedulers.boundedElastic());
+              } else {
+                return Mono.error(
+                    new IllegalStateTransitionException(
+                        "Vous ne pouvez pas changer un ack de "
+                            + message.getAck()
+                            + " à "
+                            + dto.getNewAck()));
+              }
+            });
   }
 }

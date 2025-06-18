@@ -6,10 +6,13 @@ import inc.yowyob.service.snappy.domain.usecases.authentication.AuthenticateOrga
 import inc.yowyob.service.snappy.domain.usecases.authentication.AuthenticateUserUseCase;
 import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateOrganizationDto;
 import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateUserDto;
+import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateOrganizationDto;
+import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateUserDto;
 import inc.yowyob.service.snappy.presentation.resources.AuthenticationResource;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/auth")
@@ -26,17 +29,18 @@ public class AuthenticationController {
   }
 
   @PostMapping("/organization")
-  public ResponseEntity<AuthenticationResource<Organization>> authenticateOrganization(
-      @RequestBody @Validated AuthenticateOrganizationDto dto) {
-    AuthenticationResource<Organization> authenticationResource =
-        authenticateOrganizationUseCase.execute(dto);
-    return ResponseEntity.ok(authenticationResource);
+  public Mono<ResponseEntity<AuthenticationResource<Organization>>> authenticateOrganization(
+      @RequestBody @Validated Mono<AuthenticateOrganizationDto> dtoMono) {
+    return dtoMono
+        .flatMap(authenticateOrganizationUseCase::execute) // Assuming execute now returns Mono<AuthenticationResource<Organization>>
+        .map(ResponseEntity::ok);
   }
 
   @PostMapping("/user")
-  public ResponseEntity<AuthenticationResource<User>> authenticateUser(
-      @RequestBody @Validated AuthenticateUserDto dto) {
-    AuthenticationResource<User> authenticationResource = authenticateUserUseCase.execute(dto);
-    return ResponseEntity.ok(authenticationResource);
+  public Mono<ResponseEntity<AuthenticationResource<User>>> authenticateUser(
+      @RequestBody @Validated Mono<AuthenticateUserDto> dtoMono) {
+    return dtoMono
+        .flatMap(authenticateUserUseCase::execute) // Assuming execute now returns Mono<AuthenticationResource<User>>
+        .map(ResponseEntity::ok);
   }
 }

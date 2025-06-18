@@ -3,11 +3,13 @@ package inc.yowyob.service.snappy.domain.usecases.organization;
 import inc.yowyob.service.snappy.domain.entities.Organization;
 import inc.yowyob.service.snappy.domain.usecases.UseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.OrganizationRepository;
-import java.util.List;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
-public class GetAllOrganizationsUseCase implements UseCase<Boolean, List<Organization>> {
+public class GetAllOrganizationsUseCase implements UseCase<Boolean, Flux<Organization>> {
 
   private final OrganizationRepository organizationRepository;
 
@@ -16,7 +18,9 @@ public class GetAllOrganizationsUseCase implements UseCase<Boolean, List<Organiz
   }
 
   @Override
-  public List<Organization> execute(Boolean input) {
-    return organizationRepository.findAll();
+  public Flux<Organization> execute(Boolean input) {
+    return Mono.fromCallable(organizationRepository::findAll)
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMapMany(Flux::fromIterable);
   }
 }

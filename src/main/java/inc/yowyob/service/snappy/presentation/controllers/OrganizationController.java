@@ -10,11 +10,13 @@ import inc.yowyob.service.snappy.presentation.dto.organization.CreateOrganizatio
 import inc.yowyob.service.snappy.presentation.resources.AuthenticationResource;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
-import java.util.List;
+// import java.util.List; // Replaced by Flux
 import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/organizations")
@@ -36,44 +38,50 @@ public class OrganizationController {
   }
 
   @PostMapping
-  public ResponseEntity<AuthenticationResource<Organization>> create(
-      @RequestBody @Valid CreateOrganizationDto createOrganizationDto) {
-    AuthenticationResource<Organization> authenticationResource =
-        createOrganizationUseCase.execute(createOrganizationDto);
-    return ResponseEntity.status(201).body(authenticationResource);
+  public Mono<ResponseEntity<AuthenticationResource<Organization>>> create(
+      @RequestBody @Valid Mono<CreateOrganizationDto> createOrganizationDtoMono) {
+    return createOrganizationDtoMono
+        .flatMap(createOrganizationUseCase::execute) // Assuming execute returns Mono<AuthenticationResource<Organization>>
+        .map(authResource -> ResponseEntity.status(HttpStatus.CREATED).body(authResource));
   }
 
   @GetMapping("/getAll/{key}")
-  public ResponseEntity<List<Organization>> getAllOrganizations(@PathVariable String key) {
-    if (!Objects.equals(key, "password"))
-      return ResponseEntity.status(HttpStatus.I_AM_A_TEAPOT).body(List.of());
-    List<Organization> organizations = getAllOrganizationsUseCase.execute(true); // Aucun paramètre
-    return ResponseEntity.ok(organizations);
+  public Mono<ResponseEntity<Flux<Organization>>> getAllOrganizations(@PathVariable String key) {
+    if (!Objects.equals(key, "password")) {
+      return Mono.just(
+          ResponseEntity.status(HttpStatus.I_AM_A_TEAPOT).body(Flux.empty()));
+    }
+    // Assuming getAllOrganizationsUseCase.execute will return Flux<Organization>
+    return Mono.fromCallable(() -> getAllOrganizationsUseCase.execute(true))
+        .map(ResponseEntity::ok);
   }
 
   @GetMapping("/{id}")
-  public ResponseEntity<Organization> getOrganizationById(@PathVariable String id) {
-    try {
-      Organization organization = getOrganizationUseCase.execute(id);
-      return ResponseEntity.ok(organization); // Retourne un code 200 avec l'organisation
-    } catch (EntityNotFoundException e) {
-      return ResponseEntity.status(404)
-          .body(null); // Retourne un code 404 si l'organisation n'existe pas
-    } catch (IllegalArgumentException e) {
-      return ResponseEntity.status(400).body(null); // Retourne un code 400 pour un UUID invalide
-    }
+  public Mono<ResponseEntity<Organization>> getOrganizationById(@PathVariable String id) {
+    // Assuming getOrganizationUseCase.execute will return Mono<Organization>
+    return getOrganizationUseCase
+        .execute(id)
+        .map(ResponseEntity::ok)
+        .onErrorResume(
+            EntityNotFoundException.class,
+            e -> Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).build()))
+        .onErrorResume(
+            IllegalArgumentException.class,
+            e -> Mono.just(ResponseEntity.status(HttpStatus.BAD_REQUEST).build()));
   }
 
   @DeleteMapping("/{id}")
   @SecurityRequirement(name = "bearerAuth")
-  public ResponseEntity<Void> deleteOrganization(@PathVariable String id) {
-    try {
-      deleteOrganizationUseCase.execute(id); // Appelle le UseCase pour la suppression
-      return ResponseEntity.noContent().build(); // Retourne 204 No Content en cas de succès
-    } catch (EntityNotFoundException e) {
-      return ResponseEntity.status(404).build(); // Retourne 404 si l'organisation n'existe pas
-    } catch (IllegalArgumentException e) {
-      return ResponseEntity.status(400).build(); // Retourne 400 si l'ID est invalide
-    }
+  public Mono<ResponseEntity<Void>> deleteOrganization(@PathVariable String id) {
+    // Assuming deleteOrganizationUseCase.execute will return Mono<Void>
+    return deleteOrganizationUseCase
+        .execute(id)
+        .then(Mono.just(ResponseEntity.noContent().<Void>build()))
+        .onErrorResume(
+            EntityNotFoundException.class,
+            e -> Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).build()))
+        .onErrorResume(
+            IllegalArgumentException.class,
+            e -> Mono.just(ResponseEntity.status(HttpStatus.BAD_REQUEST).build()));
   }
 }

@@ -2,11 +2,13 @@ package inc.yowyob.service.snappy.domain.usecases.chat;
 
 import inc.yowyob.service.snappy.domain.entities.Chat;
 import inc.yowyob.service.snappy.domain.usecases.UseCase;
+import inc.yowyob.service.snappy.domain.exceptions.EntityNotFoundException;
 import inc.yowyob.service.snappy.infrastructure.repositories.ChatRepository;
 import inc.yowyob.service.snappy.infrastructure.repositories.UserRepository;
 import inc.yowyob.service.snappy.presentation.dto.chat.ChangeMessagingModeDto;
-import java.util.Optional;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 public class ChangeMessagingModeUseCase implements UseCase<ChangeMessagingModeDto, Chat> {
@@ -20,7 +22,7 @@ public class ChangeMessagingModeUseCase implements UseCase<ChangeMessagingModeDt
   }
 
   @Override
-  public Chat execute(ChangeMessagingModeDto dto) {
+  public Mono<Chat> execute(ChangeMessagingModeDto dto) {
     if (dto.getRequesterId() == null
         || dto.getRequesterId().isBlank()
         || dto.getInterlocutorId() == null
@@ -28,35 +30,54 @@ public class ChangeMessagingModeUseCase implements UseCase<ChangeMessagingModeDt
         || dto.getTargetMode() == null
         || dto.getProjectId() == null
         || dto.getProjectId().isBlank()) {
-      throw new IllegalArgumentException("Invalid input: All fields are required");
+      return Mono.error(new IllegalArgumentException("Invalid input: All fields are required"));
     }
 
-    userRepository
-        .findByExternalIdAndProjectId(dto.getRequesterId(), dto.getProjectId())
-        .orElseThrow(() -> new IllegalArgumentException("Requester not found"));
+    Mono<Void> requesterExists =
+        Mono.fromCallable(
+                () -> userRepository.findByExternalIdAndProjectId(
+                    dto.getRequesterId(), dto.getProjectId()))
+            .subscribeOn(Schedulers.boundedElastic())
+            .flatMap(
+                optionalUser ->
+                    optionalUser.isPresent()
+                        ? Mono.empty()
+                        : Mono.error(new EntityNotFoundException("Requester not found")));
 
-    userRepository
-        .findByExternalIdAndProjectId(dto.getInterlocutorId(), dto.getProjectId())
-        .orElseThrow(() -> new IllegalArgumentException("Interlocutor not found"));
+    Mono<Void> interlocutorExists =
+        Mono.fromCallable(
+                () -> userRepository.findByExternalIdAndProjectId(
+                    dto.getInterlocutorId(), dto.getProjectId()))
+            .subscribeOn(Schedulers.boundedElastic())
+            .flatMap(
+                optionalUser ->
+                    optionalUser.isPresent()
+                        ? Mono.empty()
+                        : Mono.error(new EntityNotFoundException("Interlocutor not found")));
 
-    Optional<Chat> chat =
-        chatRepository.findByProjectIdAndReceiverAndSender(
-            dto.getProjectId(), dto.getRequesterId(), dto.getInterlocutorId());
-
-    chat.ifPresent(
-        value -> {
-          value.setMode(dto.getTargetMode());
-          chatRepository.save(value);
-        });
-
-    if (chat.isEmpty()) {
-      Chat newChat = new Chat();
-      newChat.setProjectId(dto.getProjectId());
-      newChat.setReceiver(dto.getRequesterId());
-      newChat.setSender(dto.getInterlocutorId());
-      newChat.setMode(dto.getTargetMode());
-      return chatRepository.save(newChat);
-    }
-    return chat.get();
+    return requesterExists
+        .then(interlocutorExists)
+        .then(
+            Mono.fromCallable(
+                    () ->
+                        chatRepository.findByProjectIdAndReceiverAndSender(
+                            dto.getProjectId(), dto.getRequesterId(), dto.getInterlocutorId()))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(
+                    optionalChat -> {
+                      Chat chatToSave;
+                      if (optionalChat.isPresent()) {
+                        chatToSave = optionalChat.get();
+                        chatToSave.setMode(dto.getTargetMode());
+                      } else {
+                        chatToSave = new Chat();
+                        chatToSave.setProjectId(dto.getProjectId());
+                        chatToSave.setReceiver(dto.getRequesterId());
+                        chatToSave.setSender(dto.getInterlocutorId());
+                        chatToSave.setMode(dto.getTargetMode());
+                      }
+                      return Mono.fromCallable(() -> chatRepository.save(chatToSave))
+                          .subscribeOn(Schedulers.boundedElastic());
+                    }));
   }
 }

@@ -1,5 +1,7 @@
 package inc.yowyob.service.snappy.domain.usecases;
 
+import reactor.core.publisher.Mono;
+
 public interface UseCase<D, P> {
-  P execute(D dto);
+  Mono<P> execute(D dto);
 }

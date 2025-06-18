@@ -7,17 +7,21 @@ import inc.yowyob.service.snappy.infrastructure.repositories.MessageAttachementR
 import inc.yowyob.service.snappy.presentation.dto.chat.SaveMessageAttachementDto;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.util.ArrayList;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 @Log4j2
 public class SaveMessageAttachementUseCase
-    implements UseCase<SaveMessageAttachementDto, List<MessageAttachement>> {
+    implements UseCase<SaveMessageAttachementDto, Flux<MessageAttachement>> {
 
   private final UploadProperties uploadProperties;
   private final MessageAttachementRepository messageAttachementRepository;
@@ -29,48 +33,70 @@ public class SaveMessageAttachementUseCase
     this.uploadProperties = uploadProperties;
   }
 
-  public List<MessageAttachement> execute(SaveMessageAttachementDto dto) {
+  @Override
+  public Flux<MessageAttachement> execute(SaveMessageAttachementDto dto) {
     String uploadDir = System.getProperty("user.dir") + "/" + uploadProperties.getDir();
 
-    File directory = new File(uploadDir);
-    if (!directory.exists()) {
-      directory.mkdirs();
-    }
+    Mono<Void> createDirectoryMono =
+        Mono.fromRunnable(
+                () -> {
+                  File directory = new File(uploadDir);
+                  if (!directory.exists()) {
+                    directory.mkdirs();
+                  }
+                })
+            .subscribeOn(Schedulers.boundedElastic())
+            .then();
 
-    List<MessageAttachement> savedMessageAttachements = new ArrayList<>();
+    return createDirectoryMono.thenMany(
+        Flux.fromIterable(dto.getAttachements())
+            .flatMap(
+                file ->
+                    Mono.fromCallable(
+                            () -> {
+                              String uniqueFileName =
+                                  UUID.randomUUID() + "_" + file.getOriginalFilename();
+                              String absolutePath = uploadDir + File.separator + uniqueFileName;
+                              String publicPath =
+                                  uploadProperties.getBaseUrl() + "/" + uniqueFileName;
 
-    for (MultipartFile file : dto.getAttachements()) {
-      String uniqueFileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-      String absolutePath = uploadDir + File.separator + uniqueFileName;
-      // Construire l'URL accessible publiquement
-      String publicPath = uploadProperties.getBaseUrl() + "/" + uniqueFileName;
+                              try (InputStream is = file.getInputStream();
+                                  FileOutputStream fout = new FileOutputStream(absolutePath)) {
+                                is.transferTo(fout);
 
-      try {
-        // Save physical file
-        FileOutputStream fout = new FileOutputStream(absolutePath);
-        file.getInputStream().transferTo(fout);
-        fout.close();
+                                MessageAttachement messageAttachement = new MessageAttachement();
+                                messageAttachement.setFilename(file.getOriginalFilename());
+                                messageAttachement.setMimetype(file.getContentType());
+                                messageAttachement.setFilesize(file.getSize());
+                                messageAttachement.setPath(publicPath);
+                                messageAttachement.setMessage(dto.getMessage());
 
-        MessageAttachement messageAttachement = new MessageAttachement();
-        messageAttachement.setFilename(file.getOriginalFilename());
-        messageAttachement.setMimetype(file.getContentType());
-        messageAttachement.setFilesize(file.getSize());
-        messageAttachement.setPath(publicPath); // Stocker le chemin public accessible
-        messageAttachement.setMessage(dto.getMessage());
-
-        savedMessageAttachements.add(messageAttachement);
-
-        log.info("File saved successfully: {}", uniqueFileName);
-      } catch (Exception e) {
-        log.error("Error saving file: {}", file.getOriginalFilename(), e);
-        throw new RuntimeException("Failed to save file: " + file.getOriginalFilename(), e);
-      }
-    }
-
-    log.info(
-        "Saved {} attachements for message {}",
-        savedMessageAttachements.size(),
-        dto.getMessage().getId());
-    return messageAttachementRepository.saveAll(savedMessageAttachements);
+                                log.info("File processed for saving: {}", uniqueFileName);
+                                return messageAttachement;
+                              } catch (IOException e) {
+                                log.error(
+                                    "Error saving file: {}", file.getOriginalFilename(), e);
+                                throw new RuntimeException(
+                                    "Failed to save file: " + file.getOriginalFilename(), e);
+                              }
+                            })
+                        .subscribeOn(Schedulers.boundedElastic()))
+            .collectList()
+            .flatMapMany(
+                messageAttachements -> {
+                  if (messageAttachements.isEmpty()) {
+                    return Flux.empty();
+                  }
+                  return Mono.fromCallable(
+                          () -> messageAttachementRepository.saveAll(messageAttachements))
+                      .subscribeOn(Schedulers.boundedElastic())
+                      .doOnSuccess(
+                          savedList ->
+                              log.info(
+                                  "Saved {} attachements for message {}",
+                                  savedList.size(),
+                                  dto.getMessage().getId()))
+                      .flatMapMany(Flux::fromIterable);
+                }));
   }
 }

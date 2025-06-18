@@ -4,11 +4,14 @@ import inc.yowyob.service.snappy.domain.entities.Organization;
 import inc.yowyob.service.snappy.domain.usecases.UseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.OrganizationRepository;
 import inc.yowyob.service.snappy.infrastructure.services.JwtService;
+import inc.yowyob.service.snappy.domain.exceptions.AuthenticationFailedException;
 import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateOrganizationDto;
 import inc.yowyob.service.snappy.presentation.resources.AuthenticationResource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 public class AuthenticateOrganizationUseCase
@@ -32,25 +35,35 @@ public class AuthenticateOrganizationUseCase
   }
 
   @Override
-  public AuthenticationResource<Organization> execute(AuthenticateOrganizationDto dto) {
+  public Mono<AuthenticationResource<Organization>> execute(AuthenticateOrganizationDto dto) {
 
     // Validation robuste des données
     if (dto == null || dto.getEmail() == null || dto.getPassword() == null) {
-      throw new IllegalArgumentException("Email et mot de passe sont obligatoires !");
+      return Mono.error(
+          new IllegalArgumentException("Email et mot de passe sont obligatoires !"));
     }
 
-    Organization organization =
-        organizationRepository
-            .findByEmail(dto.getEmail())
-            .orElseThrow(
-                () -> new IllegalArgumentException("Aucune organisation trouvée avec cet email."));
-
-    // Vérification du mot de passe
-    if (!passwordEncoder.matches(dto.getPassword(), organization.getPassword())) {
-      throw new IllegalArgumentException("Mot de passe incorrect !");
-    }
-
-    return new AuthenticationResource<Organization>(
-        organization, jwtService.generateToken(organization));
+    return Mono.fromCallable(() -> organizationRepository.findByEmail(dto.getEmail()))
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMap(
+            optionalOrganization ->
+                optionalOrganization
+                    .map(Mono::just)
+                    .orElseGet(
+                        () ->
+                            Mono.error(
+                                new AuthenticationFailedException(
+                                    "Aucune organisation trouvée avec cet email."))))
+        .flatMap(
+            organization -> {
+              // Vérification du mot de passe
+              if (!passwordEncoder.matches(dto.getPassword(), organization.getPassword())) {
+                return Mono.error(new AuthenticationFailedException("Mot de passe incorrect !"));
+              }
+              // Assuming jwtService.generateToken is non-blocking or will be handled later
+              return Mono.just(
+                  new AuthenticationResource<Organization>(
+                      organization, jwtService.generateToken(organization)));
+            });
   }
 }
