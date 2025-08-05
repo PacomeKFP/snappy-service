@@ -1,12 +1,13 @@
 package inc.yowyob.service.snappy.domain.usecases.user;
 
-import inc.yowyob.service.snappy.domain.usecases.UseCase;
+import inc.yowyob.service.snappy.domain.usecases.MonoUseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.UserRepository;
 import java.util.UUID;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
-@Component
-public class DeleteUserUseCase implements UseCase<String, Void> {
+@Service
+public class DeleteUserUseCase implements MonoUseCase<String, Void> {
 
   private final UserRepository userRepository;
 
@@ -15,22 +16,22 @@ public class DeleteUserUseCase implements UseCase<String, Void> {
   }
 
   @Override
-  public Void execute(String userId) {
+  public Mono<Void> execute(String userId) {
     // Validate input
     UUID userUuid;
     try {
       userUuid = UUID.fromString(userId);
     } catch (IllegalArgumentException ex) {
-      throw new IllegalArgumentException("Invalid user ID format.");
+      return Mono.error(new IllegalArgumentException("Invalid user ID format."));
     }
 
-    // Check if the user exists
-    if (!userRepository.existsById(userUuid)) {
-      throw new IllegalArgumentException("User with ID " + userId + " does not exist.");
-    }
-
-    // Delete the user
-    userRepository.deleteById(userUuid);
-    return null;
+    // Check if the user exists and delete
+    return userRepository.existsById(userUuid)
+        .flatMap(exists -> {
+          if (!exists) {
+            return Mono.error(new IllegalArgumentException("User with ID " + userId + " does not exist."));
+          }
+          return userRepository.deleteById(userUuid);
+        });
   }
 }

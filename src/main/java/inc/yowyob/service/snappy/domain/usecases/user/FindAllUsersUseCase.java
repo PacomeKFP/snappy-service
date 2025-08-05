@@ -1,13 +1,13 @@
 package inc.yowyob.service.snappy.domain.usecases.user;
 
 import inc.yowyob.service.snappy.domain.entities.User;
-import inc.yowyob.service.snappy.domain.usecases.UseCase;
+import inc.yowyob.service.snappy.domain.usecases.FluxUseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.UserRepository;
-import java.util.List;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
-@Component
-public class FindAllUsersUseCase implements UseCase<String, List<User>> {
+@Service
+public class FindAllUsersUseCase implements FluxUseCase<String, User> {
 
   private final UserRepository userRepository;
 
@@ -16,15 +16,14 @@ public class FindAllUsersUseCase implements UseCase<String, List<User>> {
   }
 
   @Override
-  public List<User> execute(String projectId) {
+  public Flux<User> execute(String projectId) {
     // Validate projectId
     if (projectId == null || projectId.isEmpty()) {
-      throw new IllegalArgumentException("Project ID cannot be null or empty.");
+      return Flux.error(new IllegalArgumentException("Project ID cannot be null or empty."));
     }
 
-    // Fetch all users (logic assumes we have a field projectId in the User entity)
-    // Adjust the query method as needed to filter by projectId
-
+    // For now, return all users. We may need to add a projectId filter
+    // to the UserRepository if we want to filter by project
     return userRepository.findAll();
   }
 }

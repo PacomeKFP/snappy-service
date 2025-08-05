@@ -1,73 +1,110 @@
 package inc.yowyob.service.snappy.domain.entities;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import inc.yowyob.service.snappy.infrastructure.helpers.LocalDateTimeDeserializer;
 import inc.yowyob.service.snappy.infrastructure.helpers.LocalDateTimeSerializer;
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 import lombok.Data;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
 @Data
-@Table(name = "messages")
-public class Message {
+@NoArgsConstructor
+@AllArgsConstructor
+@Table("messages")
+public class Message implements Persistable<UUID> {
 
   @Id
-  @GeneratedValue(strategy = GenerationType.UUID)
-  @Column(columnDefinition = "uuid")
   private UUID id;
 
-  @Column(name = "project_id")
+  @Column("project_id")
   private String projectId;
 
   private String body;
+  
+  @Column("is_written_by_human")
   private boolean isWrittenByHuman = true;
 
-  @Enumerated(EnumType.STRING)
-  private MessageAck ack = MessageAck.SENT;
+  // Store as string instead of enum for R2DBC compatibility
+  private String ack = "SENT"; // was MessageAck enum
 
-  @ManyToOne
-  @JoinColumn(name = "sender_id") // Optionnel : renommer pour respecter le snake_case
-  @JsonIgnoreProperties({"organization", "contacts", "customJson"})
-  private User sender;
+  // Foreign key references - R2DBC doesn't support object references
+  @Column("sender_id")
+  private UUID senderId;
 
-  @ManyToOne
-  @JoinColumn(name = "receiver_id") // Optionnel : renommer pour respecter le snake_case
-  @JsonIgnoreProperties({"organization", "contacts", "customJson"})
-  private User receiver;
+  @Column("receiver_id")
+  private UUID receiverId;
 
-  @OneToMany(mappedBy = "message", cascade = CascadeType.ALL)
-  @JsonIgnoreProperties("message")
-  private List<MessageAttachement> messageAttachements;
+  // Note: messageAttachements would need to be managed via separate queries
 
-  @CreationTimestamp
+  @CreatedDate
   @JsonSerialize(using = LocalDateTimeSerializer.class)
   @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-  @Column(columnDefinition = "TIMESTAMP")
+  @Column("created_at")
   private LocalDateTime createdAt;
 
-  @UpdateTimestamp
+  @LastModifiedDate
   @JsonSerialize(using = LocalDateTimeSerializer.class)
   @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-  @Column(columnDefinition = "TIMESTAMP")
+  @Column("updated_at")
   private LocalDateTime updatedAt;
 
-  // Projection sur le sender pour JSON
-  @JsonProperty("sender")
-  public String getSenderProjection() {
-    return sender != null ? sender.getExternalId() : null;
+  // Track if this is a new entity for R2DBC
+  @JsonIgnore
+  @Transient  // Exclude from R2DBC mapping
+  private boolean isNew = true;
+
+  // Constructor for creating new messages
+  public Message(String projectId, String body, UUID senderId, UUID receiverId) {
+    this.id = UUID.randomUUID();
+    this.projectId = projectId;
+    this.body = body;
+    this.senderId = senderId;
+    this.receiverId = receiverId;
+    this.isWrittenByHuman = true;
+    this.ack = "SENT";
+    this.isNew = true;
   }
 
-  // Projection sur le receiver pour JSON
-  @JsonProperty("receiver")
-  public String getReceiverProjection() {
-    return receiver != null ? receiver.getExternalId() : null;
+  @Override
+  @JsonIgnore
+  public boolean isNew() {
+    // An entity is new if ID is null OR if explicitly marked as new
+    return this.id == null || this.isNew;
+  }
+
+  public void setNew(boolean isNew) {
+    this.isNew = isNew;
+  }
+
+  // Override setId to mark as not new when ID is set from database
+  public void setId(UUID id) {
+    this.id = id;
+    if (id != null) {
+      this.isNew = false;
+    }
+  }
+
+  // These would need to be populated via separate queries in R2DBC
+  // For now, we'll handle these at the service layer
+  @JsonProperty("sender")
+  public UUID getSenderProjection() {
+    return senderId;
+  }
+
+  @JsonProperty("receiver")  
+  public UUID getReceiverProjection() {
+    return receiverId;
   }
 }

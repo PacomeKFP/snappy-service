@@ -1,47 +1,45 @@
 package inc.yowyob.service.snappy.domain.usecases.user;
 
 import inc.yowyob.service.snappy.domain.entities.User;
-import inc.yowyob.service.snappy.domain.usecases.UseCase;
+import inc.yowyob.service.snappy.domain.usecases.FluxUseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.UserRepository;
+import inc.yowyob.service.snappy.infrastructure.repositories.UserContactRepository;
 import inc.yowyob.service.snappy.presentation.dto.user.AddContactDto;
-import java.util.List;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @Service
-public class AddContactUseCase implements UseCase<AddContactDto, List<User>> {
+public class AddContactUseCase implements FluxUseCase<AddContactDto, User> {
 
   private final UserRepository userRepository;
+  private final UserContactRepository userContactRepository;
 
-  public AddContactUseCase(UserRepository userRepository) {
+  public AddContactUseCase(UserRepository userRepository, UserContactRepository userContactRepository) {
     this.userRepository = userRepository;
+    this.userContactRepository = userContactRepository;
   }
 
   @Override
-  public List<User> execute(AddContactDto userId) {
-    // Validate the requesting user
-    User requester =
-        userRepository
-            .findByExternalIdAndProjectId(userId.getRequesterId(), userId.getProjectId())
-            .orElseThrow(() -> new IllegalArgumentException("Requester not found in the project"));
+  public Flux<User> execute(AddContactDto dto) {
+    // Validate the requesting user and contact exist
+    Mono<User> requesterMono = userRepository
+        .findByExternalIdAndProjectId(dto.getRequesterId(), dto.getProjectId())
+        .switchIfEmpty(Mono.error(new IllegalArgumentException("Requester not found in the project")));
+        
+    Mono<User> contactMono = userRepository
+        .findByExternalIdAndProjectId(dto.getContactId(), dto.getProjectId())
+        .switchIfEmpty(Mono.error(new IllegalArgumentException("Contact not found in the project")));
 
-    // Validate the target user
-    User targetContact =
-        userRepository
-            .findByExternalIdAndProjectId(userId.getContactId(), userId.getProjectId())
-            .orElseThrow(() -> new IllegalArgumentException("Contact not found in the project"));
-
-    // Ensure the contact isn't already in the user's contacts
-    if (requester.getContacts().contains(targetContact)) {
-      throw new IllegalArgumentException("User is already a contact");
-    }
-
-    // Add the contact to the requester's contact list
-    requester.getContacts().add(targetContact);
-
-    // Persist the relationship
-    userRepository.save(requester);
-
-    // Return the updated list of contacts
-    return requester.getContacts();
+    return Mono.zip(requesterMono, contactMono)
+        .flatMap(tuple -> {
+            User requester = tuple.getT1();
+            User contact = tuple.getT2();
+            
+            // Add the contact relationship in the user_contacts table
+            return userContactRepository.addContact(requester.getId(), contact.getId())
+                .then(Mono.just(contact));
+        })
+        .flux();
   }
 }

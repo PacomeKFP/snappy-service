@@ -6,18 +6,21 @@ import inc.yowyob.service.snappy.domain.usecases.chat.ChangeMessagingModeUseCase
 import inc.yowyob.service.snappy.domain.usecases.chat.GetChatDetailsUseCase;
 import inc.yowyob.service.snappy.domain.usecases.chat.GetUserChatsUseCase;
 import inc.yowyob.service.snappy.domain.usecases.chat.SendMessageUseCase;
+import inc.yowyob.service.snappy.domain.usecases.chat.UpdateMessageAck;
+import inc.yowyob.service.snappy.infrastructure.services.MessageEnrichmentService;
 import inc.yowyob.service.snappy.presentation.dto.chat.ChangeMessagingModeDto;
 import inc.yowyob.service.snappy.presentation.dto.chat.GetChatDetailsDto;
 import inc.yowyob.service.snappy.presentation.dto.chat.GetUserChatsDto;
 import inc.yowyob.service.snappy.presentation.dto.chat.SendMessageDto;
+import inc.yowyob.service.snappy.presentation.dto.chat.UpdateMessageAckDto;
 import inc.yowyob.service.snappy.presentation.resources.ChatDetailsResource;
 import inc.yowyob.service.snappy.presentation.resources.ChatResource;
+import inc.yowyob.service.snappy.presentation.resources.MessageWithAttachmentsResource;
 import jakarta.validation.Valid;
-import java.util.List;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @RestController
 @Validated
@@ -28,46 +31,55 @@ public class ChatController {
   private final GetChatDetailsUseCase getChatDetails;
   private final SendMessageUseCase sendMessageUseCase;
   private final ChangeMessagingModeUseCase changeMessagingModeUseCase;
+  private final UpdateMessageAck updateMessageAck;
+  private final MessageEnrichmentService messageEnrichmentService;
 
   public ChatController(
       GetUserChatsUseCase getUserChats,
       GetChatDetailsUseCase getChatDetails,
       SendMessageUseCase sendMessageUseCase,
-      ChangeMessagingModeUseCase changeMessagingModeUseCase) {
+      ChangeMessagingModeUseCase changeMessagingModeUseCase,
+      UpdateMessageAck updateMessageAck,
+      MessageEnrichmentService messageEnrichmentService) {
     this.getUserChats = getUserChats;
     this.getChatDetails = getChatDetails;
     this.sendMessageUseCase = sendMessageUseCase;
     this.changeMessagingModeUseCase = changeMessagingModeUseCase;
+    this.updateMessageAck = updateMessageAck;
+    this.messageEnrichmentService = messageEnrichmentService;
   }
 
   /** Retrieve detailed chat between two users. */
   @PostMapping("/details")
-  public ResponseEntity<ChatDetailsResource> getChatDetails(
-      @Valid @RequestBody GetChatDetailsDto dto) {
-    ChatDetailsResource chatDetails = getChatDetails.execute(dto);
-    return ResponseEntity.ok(chatDetails);
+  public Mono<ChatDetailsResource> getChatDetails(@Valid @RequestBody GetChatDetailsDto dto) {
+    return getChatDetails.execute(dto);
   }
 
-  /** Retrieve all active chats for a specific user. */
+  /** Retrieve all chats for a specific user. */
   @GetMapping("/{userId}/chats")
-  public ResponseEntity<List<ChatResource>> getUserChats(
-      @PathVariable String userId, @RequestParam String projectId) {
+  public Flux<ChatResource> getUserChats(@PathVariable String userId, @RequestParam String projectId) {
     GetUserChatsDto dto = new GetUserChatsDto(userId, projectId);
-    return ResponseEntity.ok(getUserChats.execute(dto));
+    return getUserChats.execute(dto);
   }
 
-  /** Send a message from one user to another. */
+  /** Send a message from one user to another with attachments. */
   @PostMapping(
       path = "/send",
-      consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
-  public ResponseEntity<Message> sendMessage(@Valid @ModelAttribute SendMessageDto dto) {
-
-    return ResponseEntity.ok(sendMessageUseCase.execute(dto));
+      consumes = {org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE})
+  public Mono<MessageWithAttachmentsResource> sendMessage(@Valid @ModelAttribute SendMessageDto dto) {
+    return sendMessageUseCase.execute(dto)
+        .flatMap(messageEnrichmentService::enrichMessageWithAttachments);
   }
 
-  /** Change the messaging mode of a conversation */
+  /** Change the messaging mode between two users. */
   @PutMapping("/changeMode")
-  public ResponseEntity<Chat> changeMessagingMode(@Valid @RequestBody ChangeMessagingModeDto dto) {
-    return ResponseEntity.ok(changeMessagingModeUseCase.execute(dto));
+  public Mono<Chat> changeMessagingMode(@Valid @RequestBody ChangeMessagingModeDto dto) {
+    return changeMessagingModeUseCase.execute(dto);
+  }
+
+  /** Update message acknowledgment status. */
+  @PostMapping("/update-ack")
+  public Mono<Message> updateMessageAck(@Valid @RequestBody UpdateMessageAckDto dto) {
+    return updateMessageAck.execute(dto);
   }
 }

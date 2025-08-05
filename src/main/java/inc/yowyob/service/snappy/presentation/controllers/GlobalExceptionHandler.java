@@ -1,6 +1,5 @@
 package inc.yowyob.service.snappy.presentation.controllers;
 
-import inc.yowyob.service.snappy.domain.exceptions.AuthenticationFailedException;
 import inc.yowyob.service.snappy.domain.exceptions.EntityNotFoundException;
 import inc.yowyob.service.snappy.domain.exceptions.IllegalStateTransitionException;
 import io.swagger.v3.oas.annotations.Hidden;
@@ -23,13 +22,8 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(404).body(Map.of("error", ex.getMessage()));
   }
 
-  @ExceptionHandler(AuthenticationFailedException.class)
-  public ResponseEntity<?> handleAuthenticationFailedException(AuthenticationFailedException ex) {
-    return ResponseEntity.status(403).body(Map.of("error", ex.getMessage()));
-  }
-
   @ExceptionHandler(IllegalStateTransitionException.class)
-  public ResponseEntity<?> handleIllegalStateTransitionException(AuthenticationFailedException ex) {
+  public ResponseEntity<?> handleIllegalStateTransitionException(IllegalStateTransitionException ex) {
     return ResponseEntity.status(409).body(Map.of("error", ex.getMessage()));
   }
 

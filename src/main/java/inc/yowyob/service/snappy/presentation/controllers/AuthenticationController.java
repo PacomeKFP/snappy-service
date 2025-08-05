@@ -7,12 +7,14 @@ import inc.yowyob.service.snappy.domain.usecases.authentication.AuthenticateUser
 import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateOrganizationDto;
 import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateUserDto;
 import inc.yowyob.service.snappy.presentation.resources.AuthenticationResource;
-import org.springframework.http.ResponseEntity;
+import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/auth")
+@Validated
 public class AuthenticationController {
 
   private final AuthenticateOrganizationUseCase authenticateOrganizationUseCase;
@@ -25,18 +27,17 @@ public class AuthenticationController {
     this.authenticateUserUseCase = authenticateUserUseCase;
   }
 
+  /** Authenticate an organization and return JWT token. */
   @PostMapping("/organization")
-  public ResponseEntity<AuthenticationResource<Organization>> authenticateOrganization(
-      @RequestBody @Validated AuthenticateOrganizationDto dto) {
-    AuthenticationResource<Organization> authenticationResource =
-        authenticateOrganizationUseCase.execute(dto);
-    return ResponseEntity.ok(authenticationResource);
+  public Mono<AuthenticationResource<Organization>> authenticateOrganization(
+      @RequestBody @Valid AuthenticateOrganizationDto dto) {
+    return authenticateOrganizationUseCase.execute(dto);
   }
 
+  /** Authenticate a user and return JWT token. */
   @PostMapping("/user")
-  public ResponseEntity<AuthenticationResource<User>> authenticateUser(
-      @RequestBody @Validated AuthenticateUserDto dto) {
-    AuthenticationResource<User> authenticationResource = authenticateUserUseCase.execute(dto);
-    return ResponseEntity.ok(authenticationResource);
+  public Mono<AuthenticationResource<User>> authenticateUser(
+      @RequestBody @Valid AuthenticateUserDto dto) {
+    return authenticateUserUseCase.execute(dto);
   }
 }

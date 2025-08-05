@@ -1,23 +1,23 @@
 package inc.yowyob.service.snappy.domain.usecases.chat;
 
 import inc.yowyob.service.snappy.domain.entities.MessageAttachement;
-import inc.yowyob.service.snappy.domain.usecases.UseCase;
+import inc.yowyob.service.snappy.domain.usecases.FluxUseCase;
 import inc.yowyob.service.snappy.infrastructure.configs.UploadProperties;
 import inc.yowyob.service.snappy.infrastructure.repositories.MessageAttachementRepository;
 import inc.yowyob.service.snappy.presentation.dto.chat.SaveMessageAttachementDto;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 @Log4j2
-public class SaveMessageAttachementUseCase
-    implements UseCase<SaveMessageAttachementDto, List<MessageAttachement>> {
+public class SaveMessageAttachementUseCase implements FluxUseCase<SaveMessageAttachementDto, MessageAttachement> {
 
   private final UploadProperties uploadProperties;
   private final MessageAttachementRepository messageAttachementRepository;
@@ -29,7 +29,8 @@ public class SaveMessageAttachementUseCase
     this.uploadProperties = uploadProperties;
   }
 
-  public List<MessageAttachement> execute(SaveMessageAttachementDto dto) {
+  @Override
+  public Flux<MessageAttachement> execute(SaveMessageAttachementDto dto) {
     String uploadDir = System.getProperty("user.dir") + "/" + uploadProperties.getDir();
 
     File directory = new File(uploadDir);
@@ -37,12 +38,16 @@ public class SaveMessageAttachementUseCase
       directory.mkdirs();
     }
 
-    List<MessageAttachement> savedMessageAttachements = new ArrayList<>();
+    return Flux.fromIterable(dto.getAttachements())
+        .flatMap(file -> saveFileAsync(file, uploadDir, dto))
+        .doOnComplete(() -> log.info("Saved {} attachements for message {}", 
+            dto.getAttachements().size(), dto.getMessage().getId()));
+  }
 
-    for (MultipartFile file : dto.getAttachements()) {
+  private Mono<MessageAttachement> saveFileAsync(MultipartFile file, String uploadDir, SaveMessageAttachementDto dto) {
+    return Mono.fromCallable(() -> {
       String uniqueFileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
       String absolutePath = uploadDir + File.separator + uniqueFileName;
-      // Construire l'URL accessible publiquement
       String publicPath = uploadProperties.getBaseUrl() + "/" + uniqueFileName;
 
       try {
@@ -51,26 +56,22 @@ public class SaveMessageAttachementUseCase
         file.getInputStream().transferTo(fout);
         fout.close();
 
-        MessageAttachement messageAttachement = new MessageAttachement();
-        messageAttachement.setFilename(file.getOriginalFilename());
-        messageAttachement.setMimetype(file.getContentType());
-        messageAttachement.setFilesize(file.getSize());
-        messageAttachement.setPath(publicPath); // Stocker le chemin public accessible
-        messageAttachement.setMessage(dto.getMessage());
-
-        savedMessageAttachements.add(messageAttachement);
+        MessageAttachement messageAttachement = new MessageAttachement(
+            file.getContentType(),  // mimetype
+            file.getOriginalFilename(),  // filename
+            publicPath,  // path
+            file.getSize(),  // filesize
+            dto.getMessage().getId()  // messageId
+        );
 
         log.info("File saved successfully: {}", uniqueFileName);
+        return messageAttachement;
       } catch (Exception e) {
         log.error("Error saving file: {}", file.getOriginalFilename(), e);
         throw new RuntimeException("Failed to save file: " + file.getOriginalFilename(), e);
       }
-    }
-
-    log.info(
-        "Saved {} attachements for message {}",
-        savedMessageAttachements.size(),
-        dto.getMessage().getId());
-    return messageAttachementRepository.saveAll(savedMessageAttachements);
+    })
+    .subscribeOn(Schedulers.boundedElastic()) // Use bounded elastic scheduler for I/O operations
+    .flatMap(messageAttachementRepository::save);
   }
 }

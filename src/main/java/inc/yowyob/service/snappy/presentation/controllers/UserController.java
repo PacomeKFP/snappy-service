@@ -7,10 +7,10 @@ import inc.yowyob.service.snappy.presentation.dto.user.CreateUserDto;
 import inc.yowyob.service.snappy.presentation.dto.user.FindUserByDisplayNameDto;
 import inc.yowyob.service.snappy.presentation.dto.user.GetUserContactsDto;
 import jakarta.validation.Valid;
-import java.util.List;
-import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @RestController
 @Validated
@@ -41,47 +41,37 @@ public class UserController {
 
   /** Add a contact to the user's contact list. */
   @PostMapping("/add-contact")
-  public ResponseEntity<List<User>> addContact(@Valid @RequestBody AddContactDto dto) {
-    List<User> updatedContacts = addContactUseCase.execute(dto);
-    return ResponseEntity.ok(updatedContacts);
+  public Flux<User> addContact(@Valid @RequestBody AddContactDto dto) {
+    return addContactUseCase.execute(dto);
   }
 
   /** Create a new user in the system. */
   @PostMapping("/create")
-  public ResponseEntity<User> createUser(@Valid @RequestBody CreateUserDto dto) {
-    User newUser = createUserUseCase.execute(dto);
-    return ResponseEntity.ok(newUser);
+  public Mono<User> createUser(@Valid @RequestBody CreateUserDto dto) {
+    return createUserUseCase.execute(dto);
   }
 
-  /** Retrieve all users for a project ID. */
-  @GetMapping("/find-all")
-  public ResponseEntity<List<User>> findAllUsers(@RequestParam String projectId) {
-    List<User> users = findAllUsersUseCase.execute(projectId);
-    return ResponseEntity.ok(users);
-  }
-
-  @PostMapping("/filter/display-name")
-  public ResponseEntity<List<User>> filterUser(@Valid @RequestBody FindUserByDisplayNameDto dto) {
-    List<User> users = findUserByDisplayNameUseCase.execute(dto);
-    return ResponseEntity.ok(users);
-  }
-
-  /**
-   * Get the contact list of a user based on their external ID and project ID.
-   *
-   * @param dto Contains userExternalId and projectId.
-   * @return List of contacts associated with the user.
-   */
-  @PostMapping("/get-contacts")
-  public ResponseEntity<List<User>> getUserContacts(@Valid @RequestBody GetUserContactsDto dto) {
-    List<User> contacts = getUserContactsUseCase.execute(dto);
-    return ResponseEntity.ok(contacts);
-  }
-
-  /** Delete a user by their unique ID. */
+  /** Delete a user by ID. */
   @DeleteMapping("/delete/{userId}")
-  public ResponseEntity<Void> deleteUser(@PathVariable String userId) {
-    deleteUserUseCase.execute(userId);
-    return ResponseEntity.noContent().build();
+  public Mono<Void> deleteUser(@PathVariable String userId) {
+    return deleteUserUseCase.execute(userId);
+  }
+
+  /** Find all users in a project. */
+  @GetMapping("/find-all")
+  public Flux<User> findAllUsers(@RequestParam String projectId) {
+    return findAllUsersUseCase.execute(projectId);
+  }
+
+  /** Get contacts for a specific user. */
+  @PostMapping("/get-contacts")
+  public Flux<User> getUserContacts(@Valid @RequestBody GetUserContactsDto dto) {
+    return getUserContactsUseCase.execute(dto);
+  }
+
+  /** Find users by display name. */
+  @PostMapping("/filter/display-name")
+  public Flux<User> findUserByDisplayName(@Valid @RequestBody FindUserByDisplayNameDto dto) {
+    return findUserByDisplayNameUseCase.execute(dto);
   }
 }

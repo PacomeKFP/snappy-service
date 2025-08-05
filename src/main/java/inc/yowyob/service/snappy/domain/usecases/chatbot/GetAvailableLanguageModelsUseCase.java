@@ -1,17 +1,17 @@
 package inc.yowyob.service.snappy.domain.usecases.chatbot;
 
 import inc.yowyob.service.snappy.domain.entities.ChatbotLLM;
-import inc.yowyob.service.snappy.domain.usecases.UseCase;
+import inc.yowyob.service.snappy.domain.usecases.FluxUseCase;
 import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 @Service
-public class GetAvailableLanguageModelsUseCase implements UseCase<Void, List<String>> {
+public class GetAvailableLanguageModelsUseCase implements FluxUseCase<Void, String> {
 
   @Override
-  public List<String> execute(Void dto) {
-    return Arrays.stream(ChatbotLLM.values()).map(Enum::toString).collect(Collectors.toList());
+  public Flux<String> execute(Void dto) {
+    return Flux.fromIterable(Arrays.asList(ChatbotLLM.values()))
+        .map(Enum::toString);
   }
 }

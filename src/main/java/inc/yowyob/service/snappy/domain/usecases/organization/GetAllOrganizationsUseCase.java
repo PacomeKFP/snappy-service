@@ -1,13 +1,13 @@
 package inc.yowyob.service.snappy.domain.usecases.organization;
 
 import inc.yowyob.service.snappy.domain.entities.Organization;
-import inc.yowyob.service.snappy.domain.usecases.UseCase;
+import inc.yowyob.service.snappy.domain.usecases.FluxUseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.OrganizationRepository;
-import java.util.List;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 @Service
-public class GetAllOrganizationsUseCase implements UseCase<Boolean, List<Organization>> {
+public class GetAllOrganizationsUseCase implements FluxUseCase<Boolean, Organization> {
 
   private final OrganizationRepository organizationRepository;
 
@@ -16,7 +16,7 @@ public class GetAllOrganizationsUseCase implements UseCase<Boolean, List<Organiz
   }
 
   @Override
-  public List<Organization> execute(Boolean input) {
+  public Flux<Organization> execute(Boolean input) {
     return organizationRepository.findAll();
   }
 }

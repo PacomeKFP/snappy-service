@@ -2,63 +2,44 @@ package inc.yowyob.service.snappy.domain.usecases.organization;
 
 import inc.yowyob.service.snappy.domain.entities.Organization;
 import inc.yowyob.service.snappy.domain.exceptions.EntityAlreadyExistsException;
-import inc.yowyob.service.snappy.domain.usecases.UseCase;
-import inc.yowyob.service.snappy.domain.usecases.authentication.AuthenticateOrganizationUseCase;
+import inc.yowyob.service.snappy.domain.usecases.MonoUseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.OrganizationRepository;
-import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateOrganizationDto;
 import inc.yowyob.service.snappy.presentation.dto.organization.CreateOrganizationDto;
-import inc.yowyob.service.snappy.presentation.resources.AuthenticationResource;
 import java.util.UUID;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 @Service
 public class CreateOrganizationUseCase
-    implements UseCase<CreateOrganizationDto, AuthenticationResource<Organization>> {
+    implements MonoUseCase<CreateOrganizationDto, Organization> {
 
-  private final BCryptPasswordEncoder passwordEncoder;
   private final OrganizationRepository organizationRepository;
-  private final AuthenticateOrganizationUseCase authenticateOrganizationUseCase;
 
-  public CreateOrganizationUseCase(
-      BCryptPasswordEncoder passwordEncoder,
-      OrganizationRepository organizationRepository,
-      AuthenticateOrganizationUseCase authenticateOrganizationUseCase) {
-    this.passwordEncoder = passwordEncoder;
+  public CreateOrganizationUseCase(OrganizationRepository organizationRepository) {
     this.organizationRepository = organizationRepository;
-    this.authenticateOrganizationUseCase = authenticateOrganizationUseCase;
   }
 
   @Override
-  public AuthenticationResource<Organization> execute(CreateOrganizationDto createOrganizationDto) {
-    // Vérification si une organisation avec l'email existe déjà
-    if (organizationRepository.findAll().stream()
-        .anyMatch(org -> org.getEmail().equals(createOrganizationDto.getEmail()))) {
-      throw new EntityAlreadyExistsException(
-          "Une organisation avec cet email existe déjà : " + createOrganizationDto.getEmail());
-    }
+  public Mono<Organization> execute(CreateOrganizationDto createOrganizationDto) {
+    // Check if organization with email already exists
+    return organizationRepository.findByEmail(createOrganizationDto.getEmail())
+        .hasElement()
+        .flatMap(exists -> {
+          if (exists) {
+            return Mono.error(new EntityAlreadyExistsException(
+                "Une organisation avec cet email existe déjà : " + createOrganizationDto.getEmail()));
+          }
+          
+          // Create organization
+          Organization org = new Organization(
+              createOrganizationDto.getName(), 
+              createOrganizationDto.getEmail(), 
+              createOrganizationDto.getPassword()); // Not hashed anymore
+          org.setProjectId(UUID.randomUUID().toString());
+          org.setPrivateKey(UUID.randomUUID().toString());
 
-    // Hachage du mot de passe
-    String hashedPassword = passwordEncoder.encode(createOrganizationDto.getPassword());
-
-    // Création de l'organisation
-    Organization org =
-        new Organization(
-            createOrganizationDto.getName(), createOrganizationDto.getEmail(), hashedPassword);
-    org.setProjectId(UUID.randomUUID().toString());
-    org.setPrivateKey(UUID.randomUUID().toString());
-
-    // Sauvegarde dans la base
-    organizationRepository.save(org);
-    return this.authenticateOrganization(
-        createOrganizationDto.getEmail(), createOrganizationDto.getPassword());
-  }
-
-  private AuthenticationResource<Organization> authenticateOrganization(
-      String email, String password) {
-    AuthenticateOrganizationDto authenticateOrganizationDto = new AuthenticateOrganizationDto();
-    authenticateOrganizationDto.setEmail(email);
-    authenticateOrganizationDto.setPassword(password);
-    return authenticateOrganizationUseCase.execute(authenticateOrganizationDto);
+          // Save to database
+          return organizationRepository.save(org);
+        });
   }
 }

@@ -1,114 +1,185 @@
 package inc.yowyob.service.snappy.domain.entities;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import inc.yowyob.service.snappy.infrastructure.helpers.LocalDateTimeDeserializer;
 import inc.yowyob.service.snappy.infrastructure.helpers.LocalDateTimeSerializer;
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.Data;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-@Entity
 @Data
-@Table(
-    name = "users",
-    uniqueConstraints = {
-      @UniqueConstraint(
-          columnNames = {"project_id", "login"},
-          name = "uk_project_login")
-    })
-public class User implements UserDetails {
+@NoArgsConstructor
+@AllArgsConstructor
+@Table("users")
+public class User implements Persistable<UUID>, UserDetails {
 
   @Id
-  @GeneratedValue(strategy = GenerationType.UUID)
-  @Column(columnDefinition = "uuid")
   private UUID id;
 
-  @Column(name = "project_id")
+  @Column("project_id")
   private String projectId;
 
-  @Column(name = "external_id")
+  @Column("external_id")
   private String externalId;
 
   private String avatar;
 
-  @Column(name = "display_name")
+  @Column("display_name")
   private String displayName;
 
   private String email;
 
-  @Column(name = "phone_number")
+  @Column("phone_number")
   private String phoneNumber;
 
   private String login;
 
-  @JsonIgnore private String secret;
+  @JsonIgnore 
+  private String secret;
 
   private boolean isOnline;
 
-  @ElementCollection
-  @CollectionTable(name = "user_custom_json", joinColumns = @JoinColumn(name = "user_id"))
-  @MapKeyColumn(name = "json_key")
-  @Column(name = "json_value")
-  private Map<String, String> customJson;
+  @Column("organization_id")
+  private UUID organizationId; // Reference to organization
 
-  @ManyToMany
-  @JoinTable(
-      name = "user_contacts",
-      joinColumns = @JoinColumn(name = "user_id"),
-      inverseJoinColumns = @JoinColumn(name = "contact_id"))
-  @JsonIgnoreProperties("contacts")
-  private List<User> contacts;
+  @Column("custom_json")
+  private String customJson; // JSON string representation of Map<String, String>
 
-  @ManyToOne
-  @JoinColumn(name = "organization_id", nullable = false)
-  @JsonIgnoreProperties("users")
-  private Organization organization;
+  // Note: R2DBC doesn't support @ElementCollection and complex mappings
+  // Custom JSON fields are handled as JSON strings
+  // For complex relationships, separate repository calls are needed
+  // private List<User> contacts;
+  // private Organization organization;
+  // private List<Message> sentMessages;
+  // private List<Message> receivedMessages;
 
-  @OneToMany(mappedBy = "sender")
-  @JsonIgnore
-  private List<Message> sentMessages;
-
-  @OneToMany(mappedBy = "receiver")
-  @JsonIgnore
-  private List<Message> receivedMessages;
-
-  @CreationTimestamp
+  @CreatedDate
   @JsonSerialize(using = LocalDateTimeSerializer.class)
   @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-  @Column(columnDefinition = "TIMESTAMP")
+  @Column("created_at")
   private LocalDateTime createdAt;
 
-  @UpdateTimestamp
+  @LastModifiedDate
   @JsonSerialize(using = LocalDateTimeSerializer.class)
   @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-  @Column(columnDefinition = "TIMESTAMP")
+  @Column("updated_at")
   private LocalDateTime updatedAt;
 
+  // Track if this is a new entity for R2DBC
   @JsonIgnore
-  @Override
-  public Collection<? extends GrantedAuthority> getAuthorities() {
-    return List.of();
+  @Transient  // Exclude from R2DBC mapping
+  private boolean isNew = true;
+
+  // Constructor for creating new users
+  public User(String displayName, String email, String login) {
+    this.id = UUID.randomUUID();
+    this.displayName = displayName;
+    this.email = email;
+    this.login = login;
+    this.isNew = true;
   }
 
-  @JsonIgnore
   @Override
+  @JsonIgnore
+  public boolean isNew() {
+    // An entity is new if ID is null OR if explicitly marked as new
+    return this.id == null || this.isNew;
+  }
+
+  public void setNew(boolean isNew) {
+    this.isNew = isNew;
+  }
+
+  // Override setId to mark as not new when ID is set from database
+  public void setId(UUID id) {
+    this.id = id;
+    if (id != null) {
+      this.isNew = false;
+    }
+  }
+
+  // Helper methods for custom JSON handling
+  @JsonIgnore
+  public Map<String, String> getCustomJsonAsMap() {
+    if (customJson == null || customJson.trim().isEmpty()) {
+      return new HashMap<>();
+    }
+    try {
+      ObjectMapper mapper = new ObjectMapper();
+      return mapper.readValue(customJson, new TypeReference<Map<String, String>>() {});
+    } catch (JsonProcessingException e) {
+      return new HashMap<>();
+    }
+  }
+
+  public void setCustomJsonFromMap(Map<String, String> customMap) {
+    if (customMap == null) {
+      this.customJson = null;
+      return;
+    }
+    try {
+      ObjectMapper mapper = new ObjectMapper();
+      this.customJson = mapper.writeValueAsString(customMap);
+    } catch (JsonProcessingException e) {
+      this.customJson = "{}";
+    }
+  }
+
+  // UserDetails implementation for Spring Security
+  @Override
+  public Collection<? extends GrantedAuthority> getAuthorities() {
+    return List.of(); // No specific authorities for now
+  }
+
+  @Override
+  public String getUsername() {
+    return this.login + ";" + this.projectId; // Composite username
+  }
+
+  @Override
+  @JsonIgnore
   public String getPassword() {
     return this.secret;
   }
 
   @Override
-  public String getUsername() {
-    return this.login + ";" + this.projectId;
+  public boolean isAccountNonExpired() {
+    return true;
+  }
+
+  @Override
+  public boolean isAccountNonLocked() {
+    return true;
+  }
+
+  @Override
+  public boolean isCredentialsNonExpired() {
+    return true;
+  }
+
+  @Override
+  public boolean isEnabled() {
+    return true;
   }
 }

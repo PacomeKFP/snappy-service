@@ -1,7 +1,7 @@
 package inc.yowyob.service.snappy.domain.usecases.authentication;
 
 import inc.yowyob.service.snappy.domain.entities.Organization;
-import inc.yowyob.service.snappy.domain.usecases.UseCase;
+import inc.yowyob.service.snappy.domain.usecases.MonoUseCase;
 import inc.yowyob.service.snappy.infrastructure.repositories.OrganizationRepository;
 import inc.yowyob.service.snappy.infrastructure.services.JwtService;
 import inc.yowyob.service.snappy.presentation.dto.authentication.AuthenticateOrganizationDto;
@@ -9,18 +9,19 @@ import inc.yowyob.service.snappy.presentation.resources.AuthenticationResource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 @Service
 public class AuthenticateOrganizationUseCase
-    implements UseCase<AuthenticateOrganizationDto, AuthenticationResource<Organization>> {
+    implements MonoUseCase<AuthenticateOrganizationDto, AuthenticationResource<Organization>> {
 
   private final OrganizationRepository organizationRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
   @Value("${jwt.secret}")
-  private String jwtSecret; // Remplacez par une vraie clé secrète pour plus de sécurité
+  private String jwtSecret;
   @Value("${jwt.expiration}")
-  private long jwtExpirationMs; // 1 heure d'expiration
+  private long jwtExpirationMs;
 
   public AuthenticateOrganizationUseCase(
       OrganizationRepository organizationRepository,
@@ -32,25 +33,25 @@ public class AuthenticateOrganizationUseCase
   }
 
   @Override
-  public AuthenticationResource<Organization> execute(AuthenticateOrganizationDto dto) {
-
-    // Validation robuste des données
+  public Mono<AuthenticationResource<Organization>> execute(AuthenticateOrganizationDto dto) {
+    // Validation
     if (dto == null || dto.getEmail() == null || dto.getPassword() == null) {
-      throw new IllegalArgumentException("Email et mot de passe sont obligatoires !");
+      return Mono.error(new IllegalArgumentException("Email et mot de passe sont obligatoires !"));
     }
 
-    Organization organization =
-        organizationRepository
-            .findByEmail(dto.getEmail())
-            .orElseThrow(
-                () -> new IllegalArgumentException("Aucune organisation trouvée avec cet email."));
-
-    // Vérification du mot de passe
-    if (!passwordEncoder.matches(dto.getPassword(), organization.getPassword())) {
-      throw new IllegalArgumentException("Mot de passe incorrect !");
-    }
-
-    return new AuthenticationResource<Organization>(
-        organization, jwtService.generateToken(organization));
+    return organizationRepository
+        .findByEmail(dto.getEmail())
+        .switchIfEmpty(
+            Mono.error(new IllegalArgumentException("Aucune organisation trouvée avec cet email.")))
+        .flatMap(organization -> {
+          // Verify password
+          if (!passwordEncoder.matches(dto.getPassword(), organization.getPassword())) {
+            return Mono.error(new IllegalArgumentException("Mot de passe incorrect !"));
+          }
+          
+          // Generate JWT token
+          String token = jwtService.generateToken(organization);
+          return Mono.just(new AuthenticationResource<>(organization, token));
+        });
   }
 }
