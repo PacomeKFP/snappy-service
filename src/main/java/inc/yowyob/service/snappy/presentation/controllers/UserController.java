@@ -52,25 +52,25 @@ public class UserController {
   }
 
   /** Delete a user by ID. */
-  @DeleteMapping("/{id}")
-  public Mono<Void> deleteUser(@PathVariable String id) {
-    return deleteUserUseCase.execute(id);
+  @DeleteMapping("/delete/{userId}")
+  public Mono<Void> deleteUser(@PathVariable String userId) {
+    return deleteUserUseCase.execute(userId);
   }
 
   /** Find all users in a project. */
-  @GetMapping("/all/{projectId}")
-  public Flux<User> findAllUsers(@PathVariable String projectId) {
+  @GetMapping("/find-all")
+  public Flux<User> findAllUsers(@RequestParam String projectId) {
     return findAllUsersUseCase.execute(projectId);
   }
 
   /** Get contacts for a specific user. */
-  @PostMapping("/contacts")
+  @PostMapping("/get-contacts")
   public Flux<User> getUserContacts(@Valid @RequestBody GetUserContactsDto dto) {
     return getUserContactsUseCase.execute(dto);
   }
 
   /** Find users by display name. */
-  @PostMapping("/find-by-display-name")
+  @PostMapping("/filter/display-name")
   public Flux<User> findUserByDisplayName(@Valid @RequestBody FindUserByDisplayNameDto dto) {
     return findUserByDisplayNameUseCase.execute(dto);
   }

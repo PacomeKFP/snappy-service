@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import java.util.List;
 
 @RestController
 @RequestMapping("/chatbot")
@@ -38,8 +39,8 @@ public class ChatbotController {
   }
 
   @GetMapping("/available-models")
-  public Flux<String> getAvailableLanguageModels() {
-    return getAvailableLanguageModelsUseCase.execute(null);
+  public Mono<List<String>> getAvailableLanguageModels() {
+    return getAvailableLanguageModelsUseCase.execute(null).collectList();
   }
 
   @PostMapping

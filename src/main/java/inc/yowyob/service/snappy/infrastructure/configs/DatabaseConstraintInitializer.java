@@ -53,6 +53,7 @@ public class DatabaseConstraintInitializer {
                 secret VARCHAR(255),
                 is_online BOOLEAN DEFAULT FALSE,
                 organization_id UUID,
+                custom_json TEXT,
                 created_at TIMESTAMP,
                 updated_at TIMESTAMP
             );

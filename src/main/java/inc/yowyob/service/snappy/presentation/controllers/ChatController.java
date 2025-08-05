@@ -51,19 +51,22 @@ public class ChatController {
   }
 
   /** Retrieve all chats for a specific user. */
-  @PostMapping("/user-chats")
-  public Flux<ChatResource> getUserChats(@Valid @RequestBody GetUserChatsDto dto) {
+  @GetMapping("/{userId}/chats")
+  public Flux<ChatResource> getUserChats(@PathVariable String userId, @RequestParam String projectId) {
+    GetUserChatsDto dto = new GetUserChatsDto(userId, projectId);
     return getUserChats.execute(dto);
   }
 
   /** Send a message from one user to another. */
-  @PostMapping("/send-message")
-  public Mono<Message> sendMessage(@Valid @RequestBody SendMessageDto dto) {
+  @PostMapping(
+      path = "/send",
+      consumes = {org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE})
+  public Mono<Message> sendMessage(@Valid @ModelAttribute SendMessageDto dto) {
     return sendMessageUseCase.execute(dto);
   }
 
   /** Change the messaging mode between two users. */
-  @PostMapping("/change-mode")
+  @PutMapping("/changeMode")
   public Mono<Chat> changeMessagingMode(@Valid @RequestBody ChangeMessagingModeDto dto) {
     return changeMessagingModeUseCase.execute(dto);
   }

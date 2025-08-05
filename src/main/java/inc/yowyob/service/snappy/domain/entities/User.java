@@ -1,5 +1,8 @@
 package inc.yowyob.service.snappy.domain.entities;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
@@ -7,6 +10,7 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import inc.yowyob.service.snappy.infrastructure.helpers.LocalDateTimeDeserializer;
 import inc.yowyob.service.snappy.infrastructure.helpers.LocalDateTimeSerializer;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -56,10 +60,12 @@ public class User implements Persistable<UUID> {
   @Column("organization_id")
   private UUID organizationId; // Reference to organization
 
+  @Column("custom_json")
+  private String customJson; // JSON string representation of Map<String, String>
+
   // Note: R2DBC doesn't support @ElementCollection and complex mappings
-  // Custom JSON fields would need to be handled as JSON strings or separate tables
-  // For now, commenting out the complex mappings
-  // private Map<String, String> customJson;
+  // Custom JSON fields are handled as JSON strings
+  // For complex relationships, separate repository calls are needed
   // private List<User> contacts;
   // private Organization organization;
   // private List<Message> sentMessages;
@@ -107,6 +113,33 @@ public class User implements Persistable<UUID> {
     this.id = id;
     if (id != null) {
       this.isNew = false;
+    }
+  }
+
+  // Helper methods for custom JSON handling
+  @JsonIgnore
+  public Map<String, String> getCustomJsonAsMap() {
+    if (customJson == null || customJson.trim().isEmpty()) {
+      return new HashMap<>();
+    }
+    try {
+      ObjectMapper mapper = new ObjectMapper();
+      return mapper.readValue(customJson, new TypeReference<Map<String, String>>() {});
+    } catch (JsonProcessingException e) {
+      return new HashMap<>();
+    }
+  }
+
+  public void setCustomJsonFromMap(Map<String, String> customMap) {
+    if (customMap == null) {
+      this.customJson = null;
+      return;
+    }
+    try {
+      ObjectMapper mapper = new ObjectMapper();
+      this.customJson = mapper.writeValueAsString(customMap);
+    } catch (JsonProcessingException e) {
+      this.customJson = "{}";
     }
   }
 }
