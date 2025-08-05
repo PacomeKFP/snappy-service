@@ -7,6 +7,7 @@ import inc.yowyob.service.snappy.domain.usecases.chat.GetChatDetailsUseCase;
 import inc.yowyob.service.snappy.domain.usecases.chat.GetUserChatsUseCase;
 import inc.yowyob.service.snappy.domain.usecases.chat.SendMessageUseCase;
 import inc.yowyob.service.snappy.domain.usecases.chat.UpdateMessageAck;
+import inc.yowyob.service.snappy.infrastructure.services.MessageEnrichmentService;
 import inc.yowyob.service.snappy.presentation.dto.chat.ChangeMessagingModeDto;
 import inc.yowyob.service.snappy.presentation.dto.chat.GetChatDetailsDto;
 import inc.yowyob.service.snappy.presentation.dto.chat.GetUserChatsDto;
@@ -14,6 +15,7 @@ import inc.yowyob.service.snappy.presentation.dto.chat.SendMessageDto;
 import inc.yowyob.service.snappy.presentation.dto.chat.UpdateMessageAckDto;
 import inc.yowyob.service.snappy.presentation.resources.ChatDetailsResource;
 import inc.yowyob.service.snappy.presentation.resources.ChatResource;
+import inc.yowyob.service.snappy.presentation.resources.MessageWithAttachmentsResource;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -30,18 +32,21 @@ public class ChatController {
   private final SendMessageUseCase sendMessageUseCase;
   private final ChangeMessagingModeUseCase changeMessagingModeUseCase;
   private final UpdateMessageAck updateMessageAck;
+  private final MessageEnrichmentService messageEnrichmentService;
 
   public ChatController(
       GetUserChatsUseCase getUserChats,
       GetChatDetailsUseCase getChatDetails,
       SendMessageUseCase sendMessageUseCase,
       ChangeMessagingModeUseCase changeMessagingModeUseCase,
-      UpdateMessageAck updateMessageAck) {
+      UpdateMessageAck updateMessageAck,
+      MessageEnrichmentService messageEnrichmentService) {
     this.getUserChats = getUserChats;
     this.getChatDetails = getChatDetails;
     this.sendMessageUseCase = sendMessageUseCase;
     this.changeMessagingModeUseCase = changeMessagingModeUseCase;
     this.updateMessageAck = updateMessageAck;
+    this.messageEnrichmentService = messageEnrichmentService;
   }
 
   /** Retrieve detailed chat between two users. */
@@ -57,12 +62,13 @@ public class ChatController {
     return getUserChats.execute(dto);
   }
 
-  /** Send a message from one user to another. */
+  /** Send a message from one user to another with attachments. */
   @PostMapping(
       path = "/send",
       consumes = {org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE})
-  public Mono<Message> sendMessage(@Valid @ModelAttribute SendMessageDto dto) {
-    return sendMessageUseCase.execute(dto);
+  public Mono<MessageWithAttachmentsResource> sendMessage(@Valid @ModelAttribute SendMessageDto dto) {
+    return sendMessageUseCase.execute(dto)
+        .flatMap(messageEnrichmentService::enrichMessageWithAttachments);
   }
 
   /** Change the messaging mode between two users. */
